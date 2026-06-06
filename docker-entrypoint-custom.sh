@@ -12,7 +12,7 @@ echo "Custom entrypoint is running..."
 mkdir -p /data
 mkdir -p "$WORDPRESS_TARGET_DIR"
 
-# 1. If WordPress core is missing, copy it from the Docker image.
+# If WordPress core is missing, copy it from the image source.
 if [ ! -f "$WORDPRESS_TARGET_DIR/index.php" ]; then
   echo "WordPress index.php missing. Rebuilding /var/www/html..."
 
@@ -21,10 +21,9 @@ if [ ! -f "$WORDPRESS_TARGET_DIR/index.php" ]; then
   rsync -a "$WORDPRESS_SOURCE_DIR"/ "$WORDPRESS_TARGET_DIR"/
 fi
 
-# 2. Persist the whole wp-content folder.
+# Seed the whole wp-content into persistent storage once.
 if [ ! -d "$PERSISTENT_WP_CONTENT" ] || [ -z "$(ls -A "$PERSISTENT_WP_CONTENT" 2>/dev/null)" ]; then
-  echo "/data/wp-content missing or empty. Seeding from current WordPress wp-content..."
-
+  echo "Seeding full wp-content to /data/wp-content..."
   mkdir -p "$PERSISTENT_WP_CONTENT"
 
   if [ -d "$WORDPRESS_TARGET_DIR/wp-content" ] && [ ! -L "$WORDPRESS_TARGET_DIR/wp-content" ]; then
@@ -34,7 +33,7 @@ if [ ! -d "$PERSISTENT_WP_CONTENT" ] || [ -z "$(ls -A "$PERSISTENT_WP_CONTENT" 2
   fi
 fi
 
-# 3. Safety repair for SQLite integration.
+# Safety repair: keep SQLite integration inside persistent wp-content.
 if [ ! -f "$PERSISTENT_WP_CONTENT/db.php" ] && [ -f "$WORDPRESS_SOURCE_DIR/wp-content/db.php" ]; then
   echo "Restoring SQLite db.php..."
   cp -a "$WORDPRESS_SOURCE_DIR/wp-content/db.php" "$PERSISTENT_WP_CONTENT/db.php"
@@ -46,13 +45,13 @@ if [ ! -d "$PERSISTENT_WP_CONTENT/mu-plugins/sqlite-database-integration" ] && [
   rsync -a "$WORDPRESS_SOURCE_DIR/wp-content/mu-plugins/sqlite-database-integration" "$PERSISTENT_WP_CONTENT/mu-plugins/"
 fi
 
-# 4. Replace live wp-content with persistent wp-content.
+# Replace WordPress wp-content with persistent wp-content.
 rm -rf "$WORDPRESS_TARGET_DIR/wp-content"
 ln -sfn "$PERSISTENT_WP_CONTENT" "$WORDPRESS_TARGET_DIR/wp-content"
 
-# 5. Persist wp-config.php.
+# Persist wp-config.php exactly as requested.
 if [ -f "$PERSISTENT_WP_CONFIG" ]; then
-  echo "/data/wp-config.php exists. Using it."
+  echo "/data/wp-config.php exists. Linking it to /var/www/html/wp-config.php..."
 else
   echo "/data/wp-config.php does not exist. Copying current /var/www/html/wp-config.php into /data..."
 
@@ -61,19 +60,17 @@ else
     cp -a "$WORDPRESS_TARGET_DIR/wp-config.php" "$PERSISTENT_WP_CONFIG"
   else
     echo "ERROR: /data/wp-config.php does not exist and /var/www/html/wp-config.php is missing."
-    echo "Create one valid wp-config.php first, then redeploy."
+    echo "Create a valid wp-config.php once, then redeploy."
     exit 1
   fi
 fi
 
-# 6. Validate persistent config before replacing live config.
+# Validate persistent wp-config.php before linking.
 php -l "$PERSISTENT_WP_CONFIG"
 
-# 7. Atomic replace: create symlink first, then move it into place.
-ln -sfn "$PERSISTENT_WP_CONFIG" "$WORDPRESS_TARGET_DIR/wp-config.php.tmp"
-mv -Tf "$WORDPRESS_TARGET_DIR/wp-config.php.tmp" "$WORDPRESS_TARGET_DIR/wp-config.php"
+# Replace live wp-config.php with symlink to persistent config.
+ln -sfn "$PERSISTENT_WP_CONFIG" "$WORDPRESS_TARGET_DIR/wp-config.php"
 
-# 8. Permissions.
 chown -R www-data:www-data /data
 chown -R www-data:www-data "$WORDPRESS_TARGET_DIR"
 chown -h www-data:www-data "$WORDPRESS_TARGET_DIR/wp-content" "$WORDPRESS_TARGET_DIR/wp-config.php"
