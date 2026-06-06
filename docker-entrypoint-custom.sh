@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-set -e
+set -Eeuo pipefail
 
 WORDPRESS_SOURCE_DIR="/usr/src/wordpress"
 WORDPRESS_TARGET_DIR="/var/www/html"
 PERSISTENT_WP_CONTENT="/data/wp-content"
 PERSISTENT_WP_CONFIG="/data/wp-config.php"
+PERSISTENT_SALTS="/data/wp-salts.env"
 
 echo "Custom entrypoint is running..."
 
@@ -23,6 +24,29 @@ else
 fi
 
 PUBLIC_URL="${PUBLIC_URL%/}"
+
+# Generate stable WordPress salts once.
+# These are stored in /data, so they survive redeploy.
+if [ ! -f "$PERSISTENT_SALTS" ]; then
+  echo "Generating persistent WordPress salts..."
+
+  cat > "$PERSISTENT_SALTS" <<EOF
+export WORDPRESS_AUTH_KEY='$(openssl rand -base64 64 | tr -d "\n")'
+export WORDPRESS_SECURE_AUTH_KEY='$(openssl rand -base64 64 | tr -d "\n")'
+export WORDPRESS_LOGGED_IN_KEY='$(openssl rand -base64 64 | tr -d "\n")'
+export WORDPRESS_NONCE_KEY='$(openssl rand -base64 64 | tr -d "\n")'
+export WORDPRESS_AUTH_SALT='$(openssl rand -base64 64 | tr -d "\n")'
+export WORDPRESS_SECURE_AUTH_SALT='$(openssl rand -base64 64 | tr -d "\n")'
+export WORDPRESS_LOGGED_IN_SALT='$(openssl rand -base64 64 | tr -d "\n")'
+export WORDPRESS_NONCE_SALT='$(openssl rand -base64 64 | tr -d "\n")'
+EOF
+
+  chmod 600 "$PERSISTENT_SALTS"
+fi
+
+# Export stable salts so wp-config-docker.php can read them.
+# shellcheck disable=SC1090
+source "$PERSISTENT_SALTS"
 
 # Copy WordPress core if missing.
 if [ ! -f "$WORDPRESS_TARGET_DIR/index.php" ]; then
@@ -57,29 +81,31 @@ rm -rf "$WORDPRESS_TARGET_DIR/wp-content"
 ln -sfn "$PERSISTENT_WP_CONTENT" "$WORDPRESS_TARGET_DIR/wp-content"
 
 # Persist wp-config.php.
-# Important: this prevents WordPress salts from changing every redeploy.
+# Do not use official docker-entrypoint to generate this.
+# It may fail without MySQL/MariaDB env vars.
 if [ -f "$PERSISTENT_WP_CONFIG" ]; then
   echo "Using persistent wp-config.php from /data/wp-config.php..."
-  rm -f "$WORDPRESS_TARGET_DIR/wp-config.php"
-  ln -sfn "$PERSISTENT_WP_CONFIG" "$WORDPRESS_TARGET_DIR/wp-config.php"
 else
-  echo "No persistent wp-config.php found yet."
+  echo "Creating persistent wp-config.php..."
 
-  if [ ! -f "$WORDPRESS_TARGET_DIR/wp-config.php" ]; then
-    echo "Generating wp-config.php with official WordPress entrypoint..."
-    /usr/local/bin/docker-entrypoint.sh true
-  fi
-
-  if [ -f "$WORDPRESS_TARGET_DIR/wp-config.php" ]; then
-    echo "Saving generated wp-config.php to /data/wp-config.php..."
+  if [ -f "$WORDPRESS_TARGET_DIR/wp-config.php" ] && [ ! -L "$WORDPRESS_TARGET_DIR/wp-config.php" ]; then
+    echo "Copying existing live wp-config.php..."
     cp -a "$WORDPRESS_TARGET_DIR/wp-config.php" "$PERSISTENT_WP_CONFIG"
-    rm -f "$WORDPRESS_TARGET_DIR/wp-config.php"
-    ln -sfn "$PERSISTENT_WP_CONFIG" "$WORDPRESS_TARGET_DIR/wp-config.php"
+  elif [ -f "$WORDPRESS_SOURCE_DIR/wp-config-docker.php" ]; then
+    echo "Copying wp-config-docker.php template..."
+    cp -a "$WORDPRESS_SOURCE_DIR/wp-config-docker.php" "$PERSISTENT_WP_CONFIG"
+  elif [ -f "$WORDPRESS_SOURCE_DIR/wp-config-sample.php" ]; then
+    echo "Copying wp-config-sample.php template..."
+    cp -a "$WORDPRESS_SOURCE_DIR/wp-config-sample.php" "$PERSISTENT_WP_CONFIG"
   else
-    echo "ERROR: failed to create wp-config.php"
+    echo "ERROR: no wp-config template found."
     exit 1
   fi
 fi
+
+# Replace live wp-config.php with persistent symlink.
+rm -f "$WORDPRESS_TARGET_DIR/wp-config.php"
+ln -sfn "$PERSISTENT_WP_CONFIG" "$WORDPRESS_TARGET_DIR/wp-config.php"
 
 # Patch persistent wp-config.php for Railway HTTPS/proxy and dynamic public URL.
 if [ -f "$PERSISTENT_WP_CONFIG" ]; then
@@ -107,14 +133,15 @@ if ( isset( \$_SERVER['HTTP_X_FORWARDED_PROTO'] ) && \$_SERVER['HTTP_X_FORWARDED
 fi
 
 chown -R www-data:www-data /data
-chown -R www-data:www-data "$WORDPRESS_TARGET_DIR"
 chown -h www-data:www-data "$WORDPRESS_TARGET_DIR/wp-content" "$WORDPRESS_TARGET_DIR/wp-config.php"
 
 echo "WordPress ready."
 echo "PUBLIC_URL=${PUBLIC_URL}"
 echo "Persistent wp-content: /data/wp-content"
 echo "Persistent wp-config: /data/wp-config.php"
+echo "Persistent salts: /data/wp-salts.env"
+
 ls -la "$WORDPRESS_TARGET_DIR"
 ls -la /data
 
-exec /usr/local/bin/docker-entrypoint.sh "$@"
+exec "$@"
