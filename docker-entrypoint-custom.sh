@@ -8,6 +8,8 @@ echo "Custom entrypoint is running..."
 
 mkdir -p /data/uploads
 mkdir -p /data/database
+mkdir -p /data/plugins
+mkdir -p /data/themes
 mkdir -p "$WORDPRESS_TARGET_DIR"
 
 # Build dynamic public URL.
@@ -40,11 +42,68 @@ if [ ! -f "$WORDPRESS_TARGET_DIR/index.php" ]; then
   rsync -a "$WORDPRESS_SOURCE_DIR"/ "$WORDPRESS_TARGET_DIR"/
 fi
 
-# Make media persistent.
+# Seed persistent plugins from image/current WordPress if /data/plugins is empty.
+# This keeps default plugins and migrated plugins persistent.
+if [ -d "$WORDPRESS_TARGET_DIR/wp-content/plugins" ] && [ -z "$(ls -A /data/plugins 2>/dev/null)" ]; then
+  echo "Seeding /data/plugins..."
+  rsync -a "$WORDPRESS_TARGET_DIR/wp-content/plugins"/ /data/plugins/ || true
+fi
+
+# Seed persistent themes from image/current WordPress if /data/themes is empty.
+if [ -d "$WORDPRESS_TARGET_DIR/wp-content/themes" ] && [ -z "$(ls -A /data/themes 2>/dev/null)" ]; then
+  echo "Seeding /data/themes..."
+  rsync -a "$WORDPRESS_TARGET_DIR/wp-content/themes"/ /data/themes/ || true
+fi
+
+# Seed persistent uploads from image/current WordPress if /data/uploads is empty.
+if [ -d "$WORDPRESS_TARGET_DIR/wp-content/uploads" ] && [ -z "$(ls -A /data/uploads 2>/dev/null)" ]; then
+  echo "Seeding /data/uploads..."
+  rsync -a "$WORDPRESS_TARGET_DIR/wp-content/uploads"/ /data/uploads/ || true
+fi
+
+# Recovery: if WPvivid accidentally restored plugin/theme folders into uploads,
+# move obvious plugin/theme folders to the correct persistent folders.
+# A theme usually has style.css at its root.
+# A plugin usually has PHP files near its root.
+echo "Checking for misplaced plugins/themes inside /data/uploads..."
+
+for item in /data/uploads/*; do
+  [ -d "$item" ] || continue
+
+  name="$(basename "$item")"
+
+  # Skip normal WordPress media year folders like 2024, 2025, 2026.
+  if [[ "$name" =~ ^[0-9]{4}$ ]]; then
+    continue
+  fi
+
+  # Theme detection.
+  if [ -f "$item/style.css" ]; then
+    echo "Moving misplaced theme: $name"
+    rm -rf "/data/themes/$name"
+    mv "$item" "/data/themes/$name"
+    continue
+  fi
+
+  # Plugin detection.
+  if find "$item" -maxdepth 2 -type f -name "*.php" | grep -q .; then
+    echo "Moving misplaced plugin: $name"
+    rm -rf "/data/plugins/$name"
+    mv "$item" "/data/plugins/$name"
+    continue
+  fi
+done
+
+# Replace WordPress folders with persistent Railway volume paths.
 rm -rf "$WORDPRESS_TARGET_DIR/wp-content/uploads"
 ln -sfn /data/uploads "$WORDPRESS_TARGET_DIR/wp-content/uploads"
 
-# Make SQLite DB persistent.
+rm -rf "$WORDPRESS_TARGET_DIR/wp-content/plugins"
+ln -sfn /data/plugins "$WORDPRESS_TARGET_DIR/wp-content/plugins"
+
+rm -rf "$WORDPRESS_TARGET_DIR/wp-content/themes"
+ln -sfn /data/themes "$WORDPRESS_TARGET_DIR/wp-content/themes"
+
 rm -rf "$WORDPRESS_TARGET_DIR/wp-content/database"
 ln -sfn /data/database "$WORDPRESS_TARGET_DIR/wp-content/database"
 
@@ -85,6 +144,13 @@ fi
 
 echo "WordPress ready."
 echo "PUBLIC_URL=${PUBLIC_URL}"
+echo "Persistent folders:"
+echo "  uploads  -> /data/uploads"
+echo "  plugins  -> /data/plugins"
+echo "  themes   -> /data/themes"
+echo "  database -> /data/database"
+
 ls -la "$WORDPRESS_TARGET_DIR"
+ls -la /data
 
 exec /usr/local/bin/docker-entrypoint.sh "$@"
