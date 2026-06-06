@@ -54,6 +54,8 @@ if [ -f "$PERSISTENT_WP_CONFIG" ]; then
   echo "/data/wp-config.php exists. Linking it to /var/www/html/wp-config.php..."
 else
   echo "/data/wp-config.php does not exist. Copying current /var/www/html/wp-config.php into /data..."
+  
+  ls -a "$WORDPRESS_TARGET_DIR"
 
   if [ -f "$WORDPRESS_TARGET_DIR/wp-config.php" ] && [ ! -L "$WORDPRESS_TARGET_DIR/wp-config.php" ]; then
     php -l "$WORDPRESS_TARGET_DIR/wp-config.php"
