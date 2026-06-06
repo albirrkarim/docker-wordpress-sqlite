@@ -1,5 +1,12 @@
 # WordPress Docker Images with SQLite Support
+
 > Always up-to-date multi-arch portable WordPress Docker images without MySQL requirement.<br>
+
+
+On railway start command
+```
+/bin/bash -c "echo 'ServerName 0.0.0.0' >> /etc/apache2/apache2.conf && echo 'DirectoryIndex index.php index.html' >> /etc/apache2/apache2.conf && echo 'upload_max_filesize = 50M' >> /usr/local/etc/php/php.ini && echo 'post_max_size = 50M' >> /usr/local/etc/php/php.ini && a2dismod mpm_event || true && a2dismod mpm_worker || true && a2enmod mpm_prefork || true && /usr/local/bin/docker-entrypoint-custom.sh apache2-foreground"
+```
 
 [![License: GPL v2](https://img.shields.io/badge/License-GPL_v2-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
 [![Multi-Architecture Support](https://img.shields.io/badge/arch-linux%2Famd64-green)](https://github.com/yunussandikci/docker-wordpress-sqlite/pkgs/container/wordpress-sqlite)
