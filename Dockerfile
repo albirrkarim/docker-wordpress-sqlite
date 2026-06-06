@@ -1,6 +1,8 @@
 ARG TAG=apache
 FROM wordpress:${TAG}
+
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 ENV WORDPRESS_SOURCE_DIR="/usr/src/wordpress"
 ENV WORDPRESS_TARGET_DIR="/var/www/html"
 ENV SQLITE_DIR="${WORDPRESS_SOURCE_DIR}/wp-content/mu-plugins/sqlite-database-integration"
@@ -23,5 +25,18 @@ RUN mv "${SQLITE_DIR}/db.copy" "${WORDPRESS_SOURCE_DIR}/wp-content/db.php" && \
     sed -i "s#{SQLITE_PLUGIN}#${WORDPRESS_TARGET_DIR}/wp-content/mu-plugins/sqlite-database-integration/load.php#" "${WORDPRESS_SOURCE_DIR}/wp-content/db.php" && \
     sed -i "s#<?php#<?php\ndefine( 'WP_SQLITE_AST_DRIVER', true );#" "${WORDPRESS_SOURCE_DIR}/wp-content/db.php"
 
+# Point uploads and SQLite database to persistent /data volume
+RUN rm -rf "${WORDPRESS_SOURCE_DIR}/wp-content/uploads" && \
+    rm -rf "${WORDPRESS_SOURCE_DIR}/wp-content/database" && \
+    ln -s /data/uploads "${WORDPRESS_SOURCE_DIR}/wp-content/uploads" && \
+    ln -s /data/database "${WORDPRESS_SOURCE_DIR}/wp-content/database"
+
 # PHP upload limits
 COPY uploads.ini /usr/local/etc/php/conf.d/uploads.ini
+
+# Custom entrypoint creates persistent folders before WordPress starts
+COPY docker-entrypoint-custom.sh /usr/local/bin/docker-entrypoint-custom.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint-custom.sh
+
+ENTRYPOINT ["docker-entrypoint-custom.sh"]
+CMD ["apache2-foreground"]
