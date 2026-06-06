@@ -11,15 +11,25 @@ mkdir -p /data/database
 mkdir -p "$WORDPRESS_TARGET_DIR"
 
 # Build dynamic public URL.
-# Railway usually provides RAILWAY_PUBLIC_DOMAIN.
-# Example: docker-wordpress-sqlite-production.up.railway.app
-if [ -n "${RAILWAY_PUBLIC_DOMAIN:-}" ]; then
+# Priority:
+# 1. WORDPRESS_SITE_URL, for custom domain
+# 2. RAILWAY_PUBLIC_DOMAIN, Railway public domain
+# 3. RAILWAY_STATIC_URL, fallback
+#
+# Example Railway variable:
+# WORDPRESS_SITE_URL=https://blog.reinventwp.com
+if [ -n "${WORDPRESS_SITE_URL:-}" ]; then
+  PUBLIC_URL="${WORDPRESS_SITE_URL}"
+elif [ -n "${RAILWAY_PUBLIC_DOMAIN:-}" ]; then
   PUBLIC_URL="https://${RAILWAY_PUBLIC_DOMAIN}"
 elif [ -n "${RAILWAY_STATIC_URL:-}" ]; then
   PUBLIC_URL="${RAILWAY_STATIC_URL}"
 else
   PUBLIC_URL=""
 fi
+
+# Remove trailing slash from PUBLIC_URL if present.
+PUBLIC_URL="${PUBLIC_URL%/}"
 
 # If WordPress core is missing, copy it from the image source.
 if [ ! -f "$WORDPRESS_TARGET_DIR/index.php" ]; then
@@ -41,13 +51,13 @@ ln -sfn /data/database "$WORDPRESS_TARGET_DIR/wp-content/database"
 chown -R www-data:www-data /data
 chown -R www-data:www-data "$WORDPRESS_TARGET_DIR"
 
-# Patch active wp-config.php for Railway HTTPS/proxy.
-# The official WordPress entrypoint creates wp-config.php, so run it first if config is missing.
+# The official WordPress entrypoint creates wp-config.php if it does not exist.
 if [ ! -f "$WORDPRESS_TARGET_DIR/wp-config.php" ]; then
   echo "wp-config.php missing. Running official WordPress entrypoint once to generate it..."
   /usr/local/bin/docker-entrypoint.sh true
 fi
 
+# Patch active wp-config.php for Railway HTTPS/proxy and dynamic public URL.
 if [ -f "$WORDPRESS_TARGET_DIR/wp-config.php" ]; then
   echo "Patching wp-config.php for Railway HTTPS..."
 
