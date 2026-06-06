@@ -25,6 +25,14 @@ RUN mv "${SQLITE_DIR}/db.copy" "${WORDPRESS_SOURCE_DIR}/wp-content/db.php" && \
     sed -i "s#{SQLITE_PLUGIN}#${WORDPRESS_TARGET_DIR}/wp-content/mu-plugins/sqlite-database-integration/load.php#" "${WORDPRESS_SOURCE_DIR}/wp-content/db.php" && \
     sed -i "s#<?php#<?php\ndefine( 'WP_SQLITE_AST_DRIVER', true );#" "${WORDPRESS_SOURCE_DIR}/wp-content/db.php"
 
+# Trust Railway HTTPS proxy and force HTTPS URLs in WordPress
+RUN sed -i "s#<?php#<?php\n\
+if ( isset( \$_SERVER['HTTP_X_FORWARDED_PROTO'] ) && \$_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https' ) {\n\
+    \$_SERVER['HTTPS'] = 'on';\n\
+}\n\
+define( 'WP_HOME', 'https://docker-wordpress-sqlite-production.up.railway.app' );\n\
+define( 'WP_SITEURL', 'https://docker-wordpress-sqlite-production.up.railway.app' );\n#" "${WORDPRESS_SOURCE_DIR}/wp-config-docker.php"
+
 # PHP upload limits
 COPY uploads.ini /usr/local/etc/php/conf.d/uploads.ini
 
