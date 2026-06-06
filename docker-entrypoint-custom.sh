@@ -57,9 +57,9 @@ else
   
   ls -a "$WORDPRESS_TARGET_DIR"
 
-  if [ -f "$WORDPRESS_TARGET_DIR/wp-config.php" ] && [ ! -L "$WORDPRESS_TARGET_DIR/wp-config.php" ]; then
-    php -l "$WORDPRESS_TARGET_DIR/wp-config.php"
-    cp -a "$WORDPRESS_TARGET_DIR/wp-config.php" "$PERSISTENT_WP_CONFIG"
+  if [ -f "$WORDPRESS_TARGET_DIR/wp-config-docker.php" ] && [ ! -L "$WORDPRESS_TARGET_DIR/wp-config.php" ]; then
+    php -l "$WORDPRESS_TARGET_DIR/wp-config-docker.php"
+    cp -a "$WORDPRESS_TARGET_DIR/wp-config-docker.php" "$PERSISTENT_WP_CONFIG/wp-config.php"
   else
     echo "ERROR: /data/wp-config.php does not exist and /var/www/html/wp-config.php is missing."
     echo "Create a valid wp-config.php once, then redeploy."
